@@ -1,0 +1,296 @@
+---
+title: <center> <h2> Spring 2022 </h2>  GE 461 Introduction to Data Science </center>
+# title: |
+pagetitle: GE 461 Introduction to Data Science
+papersize: a4paper
+author: <center> Statistical Models by Savaş Dayanık </center>
+# author: Statistical Models by Savaş Dayanık
+always_allow_html: true
+linkcolor: red
+output: 
+  bookdown::html_document2:
+    theme: readable
+    number_sections: false
+    code_folding: "hide"
+    toc: true
+  bookdown::pdf_document2:
+    number_sections: false
+bibliography: GE461.bib
+link-citations: yes
+---
+
+----
+
+<center> <h4>  Week 5: Advertising and Promotion </h2> </center>
+
+----
+
+```{r setup, include=FALSE}
+library(magrittr)
+library(tidyverse)
+library(car)
+library(knitr)
+library(kableExtra)
+library(pander)
+opts_chunk$set(echo = TRUE)
+
+options(knitr.kable.NA =".") 
+kable_format <- if (is_html_output()) "html" else "latex"
+options(scipen = 999)
+```
+
+
+The Dodgers is a professional baseball team and plays in the Major Baseball League. The team owns a 56,000-seat stadium and is interested in increasing the attendance of their fans during home games.*At the moment the team management would like to know if bobblehead promotions increase the attendance of the team's fans?* This is a case study based on @miller2014modeling[ Chapter 2].
+
+```{r, out.width=c("33%","33%","13%"), fig.align='center', fig.show="hold", fig.cap="56,000-seat Dodgers stadium (left),   shirts and caps (middle),  bobblehead (right)"}
+include_graphics(c("los_angeles-dodgers-stadium.jpg",
+                 "Los-Angeles-Dodgers-Promo.jpg",
+                 "adrian_bobble.jpg"))
+```
+
+    
+The 2012 season data in the `events` table of SQLite database `data/dodgers.sqlite` contain for each of  81 home play the 
+
+* month, 
+* day, 
+* weekday, 
+* part of the day (day or night),
+* attendance, 
+* opponent, 
+* temperature, 
+* whether cap or shirt or bobblehead promotions were run, and 
+* whether fireworks were present.
+
+## Prerequisites
+
+We will use `R`, `RStudio`, `R Markdown` for the next three weeks to fit statistical models to various data and analyze them. Read @wickham2017r online
+
+*  [Section 1.1](https://r4ds.had.co.nz/introduction.html#prerequisites) for how to download and install `R` and `RStudio`,
+* [Chapter 27](https://r4ds.had.co.nz/r-markdown.html) for how to use `R Markdown` to interact with `R` and conduct various predictive analyses.
+
+All materials for the next three weeks will be available on [Google drive](https://drive.google.com/drive/folders/1ehZI2fF7awKOBik7YSuAbyGV7Sa2jOj_?usp=sharing).
+
+## March 1: Exploratory data analysis
+
+@. Connect to  `data/dodgers.sqlite`. Read table `events` into a variable in `R`.
+
+    * Read @baumer2017modern[, Chapters 1, 4, 5, 15] ([Second edition online](https://mdsr-book.github.io/mdsr2e/)) for getting data from and writing them to various SQL databases. 
+    
+    * Because we do not want to hassle with user permissions, we will use SQLite for practice. I recommend `PostgreSQL` for real projects.
+    
+    * Open `RStudio` terminal, connect to database `dodgers.sqlite` with `sqlite3`. Explore it (there is only one table, `events`, at this time) with commands 
+      - `.help`
+      - `.databases `
+      - `.tables`
+      - `.schema <table_name>`
+      - `.headers on`
+      - `.mode column`
+      - `SELECT ...`
+      - `.quit`
+      
+    * Databases are great to store and retrieve large data, especially, when they are indexed with respect to variables/columns along with we do search and match extensively. 
+    
+    * `R` (likewise, `Python`) allows one to seeminglessly read from and write to databases. For fast analysis, keep data in a database, index tables for fast retrieval, use `R` or `Python` to fit models to data.
+
+```{r}
+# Ctrl-shift-i
+#library(RPostgreSQL)
+library(RSQLite)  ## if package is not on the computer, then install it only once using Tools > Install packages...
+con <- dbConnect(SQLite(), "../data/dodgers.sqlite") # read Modern Data Science with R for different ways to connect a database.
+
+## dbListTables(con)
+
+tbl(con, "events") %>% 
+  collect() %>% 
+  mutate(day_of_week = factor(day_of_week, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")),
+         month = factor(month, levels = c("APR","MAY","JUN","JUL","AUG","SEP","OCT"))) %>% 
+  mutate_if(is.character, factor) %>% 
+  mutate(temp = round((temp- 32)*5/9)) -> events
+  
+# events %>% distinct(month)
+# events$day_of_week %>% class()
+# events$day_of_week %>% levels()
+# events
+# summary(events)
+```
+
+```{r}
+events %>% 
+  count(bobblehead, fireworks)
+```
+
+@. What are the number of plays on each week day and in each month of a year?
+
+Table \@ref(tab:monthweekday) and \@ref(fig:barweekdaymonth) summarize the number of games played on each weekday and month.
+
+```{r}
+events %>% 
+  count(day_of_week, month) %>% 
+  pivot_wider(names_from = day_of_week, values_from = n) %>% 
+  pander(caption = "(\\#tab:monthweekday) Number of games played in each weekday and month")
+```
+
+```{r barweekdaymonth, fig.cap = "Barplot of counts of games for each weekday and month"}
+events %>% 
+  ggplot(aes(day_of_week)) +
+  geom_bar(aes(fill=month))
+  
+```
+Figure \@ref(fig:heatmap) shows your friend's (very good) suggestion of headmap of total attendance versus weekday and month. The colors chabge from bright yellow to dark red as attendance increases. Default heatmap shuffles rows and columns so as to bring together weekdays and months with similar attendance. Here we see May, Aug, and Jul together within the months and Saturday, Friday, Sunday within the weekdays. Learn more about xtabs (cross-table) heatmap by typing `?xtabs` and `?heatmap` in the R console.
+
+```{r heatmap, fig.cap = "Heatmap of attendance versus weekday and month."}
+xtabs(attend ~ day_of_week + month, events) %>% 
+  heatmap()
+```
+
+In Figure \@ref(fig:scatterattend), I have added one more aes (colour) to capture day_night information. To avoid overplotting, I replaced `geom_point()` with `geom_jitter()`. These plots were also illuminating. So let us thank your friend who suggested this one, too.
+
+```{r scatterattend, out.width="50%", fig.show="hold", fig.cap="Average and total attendances on each weekday and month in each part of day"}
+
+sum_attend <- events %>% 
+  group_by(day_of_week, month, day_night) %>% 
+  summarize(mean_attend = mean(attend),
+            total_attend = sum(attend), .groups = "drop")
+
+sum_attend %>% 
+  ggplot(aes(day_of_week, month, month)) +
+  geom_jitter(aes(size = mean_attend, col = day_night), width = .1, height = .1, alpha=0.7) +
+  scale_size(labels = scales::comma) +
+  labs(title = "Average attendance", size = "attendance", col = "part of day",
+       x = "Weekday", y = "Month")
+
+sum_attend %>% 
+  ggplot(aes(day_of_week, month)) +
+  geom_jitter(aes(size = total_attend, col = day_night), width = .1, height = .1, alpha=0.7) +
+  labs(title = "Total attendance", size = "attendance", col = "part of day",
+       x = "Weekday", y = "Month") +
+  scale_size(labels = scales::comma) +
+  guides(col = guide_legend(order = 1), 
+         shape = guide_legend(order = 2))
+```
+
+
+@. Check the orders of the levels of the `day_of_week` and `month` factors. If necessary, put them in the logical order.
+
+```{r}
+levels(events$day_of_week)
+levels(events$month)
+```
+
+@. How many times were bobblehead promotions run on each week day?
+
+```{r}
+events %>% 
+  count(day_of_week, bobblehead) %>% 
+  pivot_wider(names_from = bobblehead, values_from = n) %>% 
+  replace_na(list(YES = 0)) %>% 
+  mutate(Total = YES + NO) %>% 
+  select(-NO) %>% 
+  rename(Bobblehead = YES)
+```
+
+
+@. How did the attendance vary across week days? Draw boxplots. On which day of week was the attendance the highest on average?
+
+```{r}
+events %>% 
+  ggplot(aes(day_of_week, attend))  +
+  geom_boxplot(aes(fill = day_night))
+```
+
+```{r}
+events %>% 
+  slice_max(order_by=attend, n=5)
+```
+
+@. Is there an association between attendance and 
+    - whether the game is played in day light or night? 
+    - Between attendance and whether skies are clear or cloudy?  
+
+```{r}
+events %>% 
+  ggplot(aes(day_night, attend)) +
+  geom_boxplot()
+```
+
+```{r}
+t.test(x=events$attend[events$day_night=="Day"],
+       y=events$attend[events$day_night=="Night"]) 
+```
+No statistical evidence supporting that the average attendance during day and night games are different.
+
+```{r}
+events %>% 
+  ggplot(aes(skies, attend)) +
+  geom_boxplot()
+```
+
+```{r}
+t.test(x=events$attend[events$skies=="Clear"],
+       y=events$attend[events$skies=="Cloudy"]) 
+```
+No statistical relation.
+
+@. Is there an association between attendance and temperature? 
+    - If yes, is there a positive or negative association? 
+    - Do the associations differ on clear and cloud days or day or night times? 
+    
+```{r}
+events %>% 
+  ggplot(aes(temp, attend)) +
+  geom_point() +
+  geom_smooth(se=FALSE)
+```
+
+```{r}
+lm(attend ~ temp + pmax(temp-23, 0), events) %>% summary()
+```
+
+Yes there is relation between attendance and temperature. You would have not found a "relation" if you fitted a straight line.
+
+```{r}
+lm(attend ~ temp, events) %>% summary()
+```
+
+But in that case the regression diagnostics would have disqualify your model anyway.
+
+```{r}
+lm(attend ~ temp, events) %>% plot()
+```
+
+Compare with the diagnostic plots of the previous model:
+
+```{r}
+lm(attend ~ temp + pmax(temp-23, 0), events) %>% plot()
+```
+
+\clearpage
+## Next time: A linear regression model
+
+Regress attendance on `month`, `day of the week`, and `bobblehead` promotion.
+
+@. Is there any evidence for a relationship between attendance and other variables? Why or why not?
+
+```{r}
+lmod1 <- lm(attend ~ month + day_of_week + bobblehead, events)
+summary(lmod1)
+```
+
+    
+@. Does the bobblehead promotion have a statistically significant effect on the attendance?
+    
+@. Do month and day of week variables help to explain the number of attendants?
+    
+@. How many fans are expected to be drawn alone by a bobblehead promotion to a home game? Give a 90\% confidence interval.
+    
+@. How good does the model fit to the data? Why? Comment on residual standard error and R$^2$. Plot observed attendance against predicted attendance. 
+    
+@. Predict the number of attendees to a typical home game on a Wednesday in June if a bobblehead promotion is extended. Give a 90% prediction interval.
+
+## Project (will be graded)
+
+Include **all variables** and conduct a full regression analysis of the problem. Submit your `R markdown` and `html` files to course homepage on moodle.
+  
+## Bibliography
+
+
